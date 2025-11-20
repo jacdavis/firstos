@@ -53,6 +53,8 @@ extern "C" {
     extern void irq13();
     extern void irq14();
     extern void irq15();
+    
+    extern void isr128();
 }
 
 extern "C" void outb(uint16_t port, uint8_t data);
@@ -145,11 +147,43 @@ void idt_init() {
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
     
+    idt_set_gate(128, (uint32_t)isr128, 0x08, 0xEE);
+    
     idt_flush((uint32_t)&idt_pointer);
 }
 
+extern void terminal_writestring(const char* str);
+extern void print_hex(uint32_t val);
+
 extern "C" void isr_handler(struct registers regs) {
-    // Handle CPU exceptions
+    terminal_writestring("\nException ");
+    print_hex(regs.int_no);
+    terminal_writestring(" err=");
+    print_hex(regs.err_code);
+    terminal_writestring("\n");
+    
+    terminal_writestring("EIP=");
+    print_hex(regs.eip);
+    terminal_writestring(" CS=");
+    print_hex(regs.cs);
+    terminal_writestring(" EFLAGS=");
+    print_hex(regs.eflags);
+    terminal_writestring("\n");
+    
+    if (regs.int_no == 14) {
+        uint32_t faulting_address;
+        asm volatile("mov %%cr2, %0" : "=r" (faulting_address));
+        terminal_writestring("Page fault at ");
+        print_hex(faulting_address);
+        terminal_writestring("\n");
+        
+        if (regs.err_code & 0x1) terminal_writestring("Present ");
+        if (regs.err_code & 0x2) terminal_writestring("Write ");
+        if (regs.err_code & 0x4) terminal_writestring("User ");
+        terminal_writestring("\n");
+    }
+    
+    while(1) { asm volatile("hlt"); }
 }
 
 extern void keyboard_handler();
@@ -162,5 +196,19 @@ extern "C" void irq_handler(struct registers regs) {
             outb(0xA0, 0x20);
         }
         outb(0x20, 0x20);
+    }
+}
+
+extern void terminal_writestring(const char* str);
+
+extern "C" void syscall_handler(struct registers* regs) {
+    if (regs->eax == 1) {
+        const char* msg = (const char*)regs->ebx;
+        uint32_t len = regs->ecx;
+        
+        for (uint32_t i = 0; i < len && msg[i] != '\0'; i++) {
+            char buf[2] = {msg[i], 0};
+            terminal_writestring(buf);
+        }
     }
 }

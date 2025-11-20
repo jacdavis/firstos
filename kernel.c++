@@ -5,6 +5,9 @@
 #include "idt.h"
 #include "keyboard.h"
 #include "terminal.h"
+#include "pmm.h"
+#include "paging.h"
+#include "process.h"
 
 /* Check if the compiler thinks you are targeting the wrong operating system. */
 //#if defined(__linux__)
@@ -178,7 +181,7 @@ void terminal_writestring(const char* data)
 }
 
 void terminal_write_welcome() {
-	const char* msg = "Welcome to Jacnix";
+	const char* msg = "Welcome to jacnix";
 	size_t len = strlen(msg);
 	for (size_t i = 0; i < len; i++) {
 		terminal_putentryat(msg[i], terminal_color, i, 0);
@@ -186,6 +189,20 @@ void terminal_write_welcome() {
 	terminal_row = 1;
 	terminal_column = 0;
 	terminal_update_cursor();
+}
+
+extern uint32_t _kernel_end;
+extern uint8_t _binary_bin_usertest_elf_start[];
+extern uint8_t _binary_bin_usertest_elf_end[];
+
+void print_hex(uint32_t val) {
+    char buf[11] = "0x";
+    for (int i = 7; i >= 0; i--) {
+        uint8_t nibble = (val >> (i * 4)) & 0xF;
+        buf[9-i] = nibble < 10 ? '0' + nibble : 'A' + nibble - 10;
+    }
+    buf[10] = 0;
+    terminal_writestring(buf);
 }
 
 extern "C" void kernel_main(void) 
@@ -199,6 +216,55 @@ extern "C" void kernel_main(void)
 	keyboard_init();
 
 	terminal_write_welcome();
+	terminal_writestring("\nOS Starting...\n");
+	
+	terminal_writestring("Initializing PMM...\n");
+	pmm_init(0, 32 * 1024 * 1024);
+	terminal_writestring("PMM OK\n");
+	
+	terminal_writestring("Enabling paging...\n");
+	paging_init();
+	terminal_writestring("Paging OK\n");
+	
+	terminal_writestring("System ready!\n");
+	
+	process_init();
+	terminal_writestring("Process subsystem initialized\n");
+	
+	uint32_t elf_size = (uint32_t)_binary_bin_usertest_elf_end - (uint32_t)_binary_bin_usertest_elf_start;
+	terminal_writestring("ELF size: ");
+	print_hex(elf_size);
+	terminal_writestring("\n");
+	
+	struct process* proc = process_create_from_elf(_binary_bin_usertest_elf_start, elf_size);
+	
+	if (proc) {
+		terminal_writestring("Process loaded! EIP=");
+		print_hex(proc->eip);
+		terminal_writestring(" ESP=");
+		print_hex(proc->esp);
+		terminal_writestring("\n");
+		
+		// Check if code is actually there
+		paging_switch_directory(proc->page_dir);
+		uint8_t* code_ptr = (uint8_t*)proc->eip;
+		terminal_writestring("Code at EIP: ");
+		print_hex(code_ptr[0]);
+		terminal_writestring(" ");
+		print_hex(code_ptr[1]);
+		terminal_writestring(" ");
+		print_hex(code_ptr[2]);
+		terminal_writestring(" ");
+		print_hex(code_ptr[3]);
+		terminal_writestring("\n");
+		paging_switch_directory(kernel_directory);
+		
+		terminal_writestring("Switching to ring 3...\n");
+		process_switch_to(proc);
+		terminal_writestring("Back in kernel (shouldn't happen!)\n");
+	} else {
+		terminal_writestring("Process load FAILED\n");
+	}
 	
 	/* Enable interrupts */
 	asm volatile("sti");

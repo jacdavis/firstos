@@ -15,6 +15,15 @@ isr\num:
     jmp isr_common_stub
 .endm
 
+.macro ISR_SYSCALL num
+.global isr\num
+isr\num:
+    cli
+    push $0
+    push $\num
+    jmp syscall_common_stub
+.endm
+
 .macro IRQ num, irq_num
 .global irq\num
 irq\num:
@@ -74,6 +83,8 @@ IRQ 13, 45
 IRQ 14, 46
 IRQ 15, 47
 
+ISR_SYSCALL 128
+
 isr_common_stub:
     pusha
     
@@ -122,6 +133,32 @@ irq_common_stub:
     popa
     add $8, %esp
     sti
+    iret
+
+syscall_common_stub:
+    pusha
+    
+    mov %ds, %ax
+    push %eax
+    
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    
+    push %esp
+    call syscall_handler
+    add $4, %esp
+    
+    pop %eax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    
+    popa
+    add $8, %esp
     iret
 
 .global idt_flush

@@ -18,6 +18,7 @@ struct gdt_ptr {
 } __attribute__((packed));
 
 extern "C" void gdt_flush(uint32_t);
+extern "C" void tss_flush();
 
 void gdt_init();
 

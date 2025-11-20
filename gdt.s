@@ -1,4 +1,5 @@
 .global gdt_flush
+.global tss_flush
 .type gdt_flush, @function
 
 gdt_flush:
@@ -14,4 +15,9 @@ gdt_flush:
     
     ljmp $0x08, $.flush
 .flush:
+    ret
+
+tss_flush:
+    mov $0x2B, %ax
+    ltr %ax
     ret
